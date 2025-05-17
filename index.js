@@ -1,12 +1,13 @@
 const { MongoClient } = require("mongodb");
-
+require("dotenv").config();
 // Connection strings
-const sourceURI =
-  "mongodb+srv://shsohel:VQa7ueO1rh8ydGed@prosohel.fgtcid2.mongodb.net";
+const sourceURI = process.env.SOURCE_DB;
 // const targetURI =
 //   "mongodb+srv://StrikeO001:Shahriar023$@strikeocluster001.global.mongocluster.cosmos.azure.com?retryWrites=true&w=majority";
-const targetURI =
-  "mongodb+srv://shsohel:Cn9QDPXe827EjdjS@eshop.okkgbbh.mongodb.net?retryWrites=true&w=majority";
+const targetURI = process.env.TARGET_DB;
+
+const sourceDbName = process.env.SOURCE_DB_NAME;
+const targetDbName = process.env.TARGET_DB_NAME;
 
 async function migrateAllCollections() {
   const sourceClient = new MongoClient(sourceURI);
@@ -16,8 +17,8 @@ async function migrateAllCollections() {
     await sourceClient.connect();
     await targetClient.connect();
 
-    const sourceDB = sourceClient.db("ziggasa");
-    const targetDB = targetClient.db("ziggasa");
+    const sourceDB = sourceClient.db(sourceDbName);
+    const targetDB = targetClient.db(targetDbName);
 
     // Get all collections
     const collections = await sourceDB.listCollections().toArray();
