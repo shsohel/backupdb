@@ -1,27 +1,32 @@
 // email.js
 require("dotenv").config();
+const mongoose = require("mongoose");
 const { EmailClient } = require("@azure/communication-email");
 const { AzureKeyCredential } = require("@azure/core-auth");
+const Email = require("./models/email");
+const { founderTemplate } = require("./utils");
 
 // Load environment variables
 const endpoint = process.env.ACS_ENDPOINT;
 const accessKey = process.env.ACS_ACCESS_KEY;
 const senderEmail = process.env.SENDER_EMAIL;
+const mongoUri = process.env.MONGODB_URI;
+const emailSubject = process.env.EMAIL_SUBJECT;
 
-if (!endpoint || !accessKey || !senderEmail) {
+if (!endpoint || !accessKey || !senderEmail || !mongoUri) {
   console.error(
-    "Endpoint, Access Key, or Sender Email is missing in the environment variables.",
+    "Endpoint, Access Key, Sender Email, or MongoDB URI is missing in the environment variables.",
   );
   process.exit(1);
 }
 
-// Initialize the EmailClient correctly
+// Initialize the EmailClient
 const emailClient = new EmailClient(
   endpoint,
   new AzureKeyCredential(accessKey),
 );
 
-const sendEmail = async (to, subject, text, html) => {
+const sendEmail = async (to, subject, text, html, startupName) => {
   try {
     const message = {
       senderAddress: senderEmail,
@@ -31,35 +36,73 @@ const sendEmail = async (to, subject, text, html) => {
         html: html,
       },
       recipients: {
-        to: [{ address: to }],
-      },
-      headers: {
-        "X-Priority": "3", // Normal priority
-        "X-Mailer": "Azure Communication Email",
+        to: [{ address: to, displayName: startupName }],
       },
     };
 
-    // Use the correct function to send the email
     const poller = await emailClient.beginSend(message);
     const result = await poller.pollUntilDone();
-
-    console.log("Email sent successfully:", result);
-    return result;
+    console.log(`Email sent successfully to ${to}:`, result);
   } catch (error) {
-    console.error("Error sending email:", error);
-    throw error;
+    console.error(`Error sending email to ${to}:`, error);
   }
 };
 
-const sendTo = process.env.SEND_TO;
-const subject = "Test Email";
-const text = "Plain Text";
-const html = `
-  <div>
-    <p>Hi ,</p>
-    <p>This is a test email from Occean Venture.</p>
-    <p>Best Regards,<br/>The Occean Venture Team</p>
-  </div>
-`;
+const isValidEmail = (email) => {
+  // Basic email validation regex
+  const emailPattern = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+  return emailPattern.test(email);
+};
 
-sendEmail(sendTo, subject, text, html);
+const main = async (start, end) => {
+  try {
+    // Connect to MongoDB
+    await mongoose.connect(mongoUri);
+    console.log("Connected to MongoDB");
+
+    // Fetch startups within the specified range
+    const startIndex = start - 1; // zero-based index
+    const count = end - start + 1;
+
+    const startups = await Email.find({
+      email: {
+        $exists: true,
+        $ne: "Non identified",
+        $regex: /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/,
+      },
+    })
+      .sort({ Sl: 1 }) // sort to have consistent order
+      .skip(startIndex) // skip to startIndex (0-based)
+      .limit(count); // limit number of results
+    // console.log(startups);
+
+    if (!startups.length) {
+      console.log(`No startups found in the range ${start} to ${end}`);
+      return;
+    }
+
+    for (const startup of startups) {
+      const { startupName, founderName, email } = startup;
+      const founder =
+        founderName === "Non Identified"
+          ? "Founder"
+          : founderName.split(" ")[0];
+      const subject = emailSubject;
+      const text = ``;
+      const html = founderTemplate({ founder });
+
+      console.log(founder, email);
+
+      await sendEmail(email, subject, text, html, startupName);
+    }
+
+    console.log("All emails sent successfully.");
+  } catch (error) {
+    console.error("Error:", error);
+  } finally {
+    mongoose.disconnect();
+  }
+};
+
+// Specify the range here (e.g., 1 to 10)
+main(100, 120);
